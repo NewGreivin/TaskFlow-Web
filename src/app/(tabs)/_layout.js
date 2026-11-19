@@ -1,5 +1,6 @@
 import { Drawer } from 'expo-router/drawer';
 import { Icon } from 'react-native-paper';
+import { Platform } from 'react-native';
 import { useAppTheme } from '../../theme/ThemeContext';
 
 const drawerIcon =
@@ -13,12 +14,14 @@ export default function TabsLayout() {
     <Drawer
       screenOptions={{
         headerShown: false,
+        drawerType: Platform.OS === 'web' ? 'permanent' : 'front',
         drawerActiveTintColor: palette.primary,
         drawerInactiveTintColor: palette.muted,
         drawerStyle: {
           backgroundColor: palette.surface,
           borderRightColor: palette.border,
           borderRightWidth: 1,
+          width: Platform.OS === 'web' ? 220 : undefined,
         },
         drawerLabelStyle: {
           fontSize: 13,
