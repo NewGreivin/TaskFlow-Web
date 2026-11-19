@@ -1,0 +1,136 @@
+import { StyleSheet, View } from 'react-native';
+import { FAB, IconButton, Searchbar, Text } from 'react-native-paper';
+import { useRouter, useFocusEffect } from 'expo-router';
+import { useCallback, useState, useEffect, useRef } from 'react';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { FlashList } from '@shopify/flash-list';
+import { useLocalStorageContext } from '../../data/database';
+import { getTasks, toTaskCard, updateTaskStatus } from '../../data/taskRepository';
+import { useAppTheme } from '../../theme/ThemeContext';
+import { cancelTaskNotifications } from '../../data/notificationRepository';
+import TaskCard from '../../components/TaskCard';
+import FilterPills from '../../components/FilterPills';
+export default function Tasks() {
+  const router = useRouter(),
+    db = useLocalStorageContext(),
+    insets = useSafeAreaInsets(),
+    fabBottom = 60 + Math.max(insets.bottom, 6) + 16,
+    { palette } = useAppTheme();
+  const [filter, setFilter] = useState('Todas'),
+    [searchInput, setSearchInput] = useState(''),
+    [query, setQuery] = useState(''),
+    [tasks, setTasks] = useState([]);
+
+  // Debounce search input to prevent SQL queries on every keystroke
+  const debounceTimer = useRef(null);
+  useEffect(() => {
+    if (debounceTimer.current) clearTimeout(debounceTimer.current);
+    debounceTimer.current = setTimeout(() => {
+      setQuery(searchInput);
+    }, 300);
+    return () => clearTimeout(debounceTimer.current);
+  }, [searchInput]);
+
+  const load = useCallback(
+    async () => setTasks((await getTasks(db, { search: query, status: filter })).map(toTaskCard)),
+    [db, query, filter]
+  );
+  useFocusEffect(
+    useCallback(() => {
+      load();
+    }, [load])
+  );
+  const toggle = async (t) => {
+    const nextStatus = t.status === 'Completada' ? 'Pendiente' : 'Completada';
+    await updateTaskStatus(db, t.id, nextStatus);
+    if (nextStatus === 'Completada') await cancelTaskNotifications(db, t.id);
+    load();
+  };
+  return (
+    <View style={[styles.container, { backgroundColor: palette.background }]}>
+      <FlashList
+        data={tasks}
+        estimatedItemSize={76}
+        keyExtractor={(t) => t.id.toString()}
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+        ListHeaderComponent={
+          <>
+            <View style={styles.header}>
+              <View style={{ flex: 1 }}>
+                <Text variant="labelLarge" style={{ color: palette.primary, fontWeight: '800' }}>
+                  ORGANIZA
+                </Text>
+                <Text variant="headlineSmall" style={[styles.title, { color: palette.text }]}>
+                  Mis tareas
+                </Text>
+              </View>
+              <IconButton icon="sort-variant" mode="contained-tonal" />
+            </View>
+            <Searchbar
+              placeholder="Buscar tareas..."
+              value={searchInput}
+              onChangeText={setSearchInput}
+              style={[styles.search, { backgroundColor: palette.surface }]}
+              inputStyle={{ color: palette.text }}
+            />
+            <FilterPills
+              items={['Todas', 'Pendientes', 'En progreso', 'Terminadas']}
+              value={filter}
+              onChange={setFilter}
+            />
+            <Text variant="labelLarge" style={[styles.result, { color: palette.muted }]}>
+              {tasks.length} tareas
+            </Text>
+          </>
+        }
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            <View style={[styles.emptyIcon, { backgroundColor: palette.primarySoft }]}>
+              <Text style={{ fontSize: 30 }}>✓</Text>
+            </View>
+            <Text variant="titleMedium" style={{ color: palette.text, fontWeight: '800' }}>
+              Todo limpio
+            </Text>
+            <Text style={{ color: palette.muted, textAlign: 'center' }}>
+              No hay tareas que coincidan con tu búsqueda.
+            </Text>
+          </View>
+        }
+        renderItem={({ item, index }) => (
+          <TaskCard
+            task={item}
+            index={index}
+            onToggle={() => toggle(item)}
+            onPress={() => router.push(`/task/${item.id}`)}
+          />
+        )}
+      />
+      <FAB
+        icon="plus"
+        label="Nueva tarea"
+        style={[styles.fab, { backgroundColor: palette.primary, bottom: fabBottom }]}
+        color="#FFF"
+        onPress={() => router.push('/task/new')}
+      />
+    </View>
+  );
+}
+const styles = StyleSheet.create({
+  container: { flex: 1 },
+  content: { padding: 20, paddingTop: 55, paddingBottom: 130 },
+  header: { flexDirection: 'row', alignItems: 'center', marginBottom: 16 },
+  title: { fontWeight: '850', marginTop: 3 },
+  search: { borderRadius: 15, marginBottom: 13 },
+  result: { marginTop: 17, marginBottom: 10, fontWeight: '700' },
+  empty: { alignItems: 'center', paddingVertical: 70, gap: 8 },
+  emptyIcon: {
+    width: 68,
+    height: 68,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 5,
+  },
+  fab: { position: 'absolute', right: 18, bottom: 90, borderRadius: 18 },
+});
